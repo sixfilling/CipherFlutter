@@ -236,4 +236,4 @@ public class MainApp extends Application {
         launch(args);
     }
 }
-// Nope. No malware here too
+// Still looking for malware?

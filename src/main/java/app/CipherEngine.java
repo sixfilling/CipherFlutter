@@ -11,7 +11,7 @@ import java.security.SecureRandom;
 import java.util.Base64;
 
 public final class CipherEngine {
-    private static final byte[] SALT = "token-crypt:v1:fixed-salt".getBytes(StandardCharsets.UTF_8);
+    private static final int SALT_BYTES = 16;
     private static final int ITERATIONS = 300_000;   // raise later if you want
     private static final int KEY_BITS = 256;
     private static final int GCM_TAG_BITS = 128;
@@ -21,15 +21,19 @@ public final class CipherEngine {
 
     private CipherEngine() {}
 
-    private static SecretKeySpec keyFromToken(String token) throws Exception {
-        PBEKeySpec spec = new PBEKeySpec(token.toCharArray(), SALT, ITERATIONS, KEY_BITS);
+    private static SecretKeySpec keyFromToken(String token, byte[] salt) throws Exception {
+        PBEKeySpec spec = new PBEKeySpec(token.toCharArray(), salt, ITERATIONS, KEY_BITS);
         SecretKeyFactory f = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256"); // PBKDF2 SHA-256 [web:324]
         byte[] keyBytes = f.generateSecret(spec).getEncoded();
+        spec.clearPassword();
         return new SecretKeySpec(keyBytes, "AES");
     }
 
     public static String encrypt(String token, String plaintext) throws Exception {
-        SecretKeySpec key = keyFromToken(token);
+        byte[] salt = new byte[SALT_BYTES];
+        RNG.nextBytes(salt);
+
+        SecretKeySpec key = keyFromToken(token, salt);
 
         byte[] iv = new byte[IV_BYTES];
         RNG.nextBytes(iv);
@@ -40,22 +44,26 @@ public final class CipherEngine {
         byte[] ct = cipher.doFinal(plaintext.getBytes(StandardCharsets.UTF_8));
 
         // output = base64( iv || ciphertext )
-        ByteBuffer bb = ByteBuffer.allocate(iv.length + ct.length);
+        ByteBuffer bb = ByteBuffer.allocate(salt.length + iv.length + ct.length);
+        bb.put(salt);
         bb.put(iv);
         bb.put(ct);
         return Base64.getEncoder().encodeToString(bb.array());
     }
 
     public static String decrypt(String token, String tokenText) throws Exception {
-        SecretKeySpec key = keyFromToken(token);
-
         byte[] all = Base64.getDecoder().decode(tokenText.trim());
-        if (all.length < IV_BYTES + 1) throw new IllegalArgumentException("Ciphertext too short");
+        if (all.length < SALT_BYTES + IV_BYTES + 1) throw new IllegalArgumentException("Ciphertext too short");
 
+        byte[] salt = new byte[SALT_BYTES];
         byte[] iv = new byte[IV_BYTES];
-        byte[] ct = new byte[all.length - IV_BYTES];
-        System.arraycopy(all, 0, iv, 0, IV_BYTES);
-        System.arraycopy(all, IV_BYTES, ct, 0, ct.length);
+        byte[] ct = new byte[all.length - SALT_BYTES - IV_BYTES];
+
+        System.arraycopy(all, 0, salt, 0, SALT_BYTES);
+        System.arraycopy(all, SALT_BYTES, iv, 0, IV_BYTES);
+        System.arraycopy(all, SALT_BYTES + IV_BYTES, ct, 0, ct.length);
+
+        SecretKeySpec key = keyFromToken(token, salt);
 
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
         cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(GCM_TAG_BITS, iv)); // GCMParameterSpec usage [web:325]
@@ -64,4 +72,4 @@ public final class CipherEngine {
         return new String(pt, StandardCharsets.UTF_8);
     }
 }
-// If you are reading this, why are you snooping around? There *is* no malware, trust ;)
+// Why are you snooping around? There *is* no malware, trust me ;)
