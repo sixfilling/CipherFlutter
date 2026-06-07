@@ -280,7 +280,11 @@ public class MainApp extends Application {
 
         VBox root = new VBox(topRow, helpRow, modeRow, io, buttons, status);
 
-        Scene scene = new Scene(root, 720, 760);
+        Scene scene = new Scene(root, 854, 480);
+        stage.setMinWidth(854);
+        stage.setMinHeight(480);
+        // stage.setResizable(false); // uncomment if you want a fixed window size
+
         stage.setTitle(APP_TITLE);
         stage.setScene(scene);
         stage.show();
@@ -316,7 +320,7 @@ public class MainApp extends Application {
 
     private static final SecureRandom TOKEN_RNG = new SecureRandom();
 
-    private static final int GENERATED_TOKEN_LENGTH = 8;
+    private static final int GENERATED_TOKEN_LENGTH = 24;
 
     private static final String TOKEN_LOWER = "abcdefghijklmnopqrstuvwxyz";
     private static final String TOKEN_UPPER = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
