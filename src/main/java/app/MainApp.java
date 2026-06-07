@@ -16,6 +16,7 @@ import javafx.util.Duration;
 
 import java.awt.Desktop;
 import java.net.URI;
+import java.security.SecureRandom;
 import java.util.Objects;
 
 public class MainApp extends Application {
@@ -37,16 +38,48 @@ public class MainApp extends Application {
         menuBtn.setFocusTraversable(false);
         menuBtn.setOnAction(e -> showAboutDialog(stage));
 
-        TextField tokenField = new TextField();
-        tokenField.setPromptText("Token (UUIDv7, etc)");
+        PasswordField tokenHiddenField = new PasswordField();
+        tokenHiddenField.setPromptText("Secret token / password");
+
+        TextField tokenVisibleField = new TextField();
+        tokenVisibleField.setPromptText("Secret token / password");
+        tokenVisibleField.setVisible(false);
+        tokenVisibleField.setManaged(false);
+
+        tokenHiddenField.textProperty().bindBidirectional(tokenVisibleField.textProperty());
+
+        StackPane tokenBox = new StackPane(tokenHiddenField, tokenVisibleField);
 
         Button setToken = new Button("Set token");
+        Button generateTokenBtn = new Button("Generate");
+        Button showToken = new Button("Show");
         Button theme = new Button("Light mode");
 
-        HBox topRow = new HBox(10, menuBtn, new Label("Token:"), tokenField, setToken, theme);
+        showToken.setFocusTraversable(false);
+        showToken.setOnAction(e -> {
+            boolean showing = tokenVisibleField.isVisible();
+
+            tokenVisibleField.setVisible(!showing);
+            tokenVisibleField.setManaged(!showing);
+
+            tokenHiddenField.setVisible(showing);
+            tokenHiddenField.setManaged(showing);
+
+            showToken.setText(showing ? "Show" : "Hide");
+
+            if (showing) {
+                tokenHiddenField.requestFocus();
+                tokenHiddenField.positionCaret(tokenHiddenField.getText().length());
+            } else {
+                tokenVisibleField.requestFocus();
+                tokenVisibleField.positionCaret(tokenVisibleField.getText().length());
+            }
+        });
+
+        HBox topRow = new HBox(10, menuBtn, new Label("Token:"), tokenBox, setToken, generateTokenBtn, showToken, theme);
         topRow.setPadding(new Insets(10));
         topRow.setAlignment(Pos.CENTER_LEFT);
-        HBox.setHgrow(tokenField, Priority.ALWAYS);
+        HBox.setHgrow(tokenBox, Priority.ALWAYS);
 
         Label helpText = new Label("You can get a UUID v7 here:");
         helpText.getStyleClass().add("help");
@@ -69,18 +102,44 @@ public class MainApp extends Application {
         output.setEditable(false);
         output.setFocusTraversable(true);
 
-        Label status = new Label("Choose mode. Set token. Then just type/paste.");
+        Label status = new Label("Choose mode. Set a secret token. Then type or paste.");
         status.getStyleClass().add("status");
 
         final String[] activeToken = {""};
 
         Runnable doSetToken = () -> {
-            activeToken[0] = tokenField.getText().trim();
-            status.setText(activeToken[0].isEmpty() ? "Token cleared." : "Token set.");
+            activeToken[0] = tokenHiddenField.getText().trim();
+
+            if (activeToken[0].isEmpty()) {
+                status.setText("Token cleared.");
+            } else if (activeToken[0].length() < 16) {
+                status.setText("Token set, but it is short. Use Generate for better security.");
+            } else {
+                status.setText("Token set.");
+            }
         };
 
         setToken.setOnAction(e -> doSetToken.run());
-        tokenField.setOnAction(e -> doSetToken.run());
+        tokenHiddenField.setOnAction(e -> doSetToken.run());
+        tokenVisibleField.setOnAction(e -> doSetToken.run());
+
+        generateTokenBtn.setFocusTraversable(false);
+        generateTokenBtn.setOnAction(e -> {
+            String generated = createRandomToken();
+
+            tokenHiddenField.setText(generated);
+            activeToken[0] = generated;
+
+            status.setText("Generated and set strong token. Store it safely.");
+
+            if (tokenVisibleField.isVisible()) {
+                tokenVisibleField.requestFocus();
+                tokenVisibleField.selectAll();
+            } else {
+                tokenHiddenField.requestFocus();
+                tokenHiddenField.selectAll();
+            }
+        });
 
         ToggleGroup modeGroup = new ToggleGroup();
         ToggleButton modeEncrypt = new ToggleButton("Encrypt mode");
@@ -89,15 +148,26 @@ public class MainApp extends Application {
         modeDecrypt.setToggleGroup(modeGroup);
         modeEncrypt.setSelected(true);
 
-        HBox modeRow = new HBox(10, new Label("Mode:"), modeEncrypt, modeDecrypt);
+        CheckBox autoCopyEncrypted = new CheckBox("Auto-copy encrypted output");
+
+        HBox modeRow = new HBox(10, new Label("Mode:"), modeEncrypt, modeDecrypt, autoCopyEncrypted);
         modeRow.setPadding(new Insets(0, 10, 0, 10));
         modeRow.setAlignment(Pos.CENTER_LEFT);
 
         Runnable doEncrypt = () -> {
             if (activeToken[0].isEmpty()) { status.setText("Set token first."); return; }
             try {
-                output.setText(CipherEngine.encrypt(activeToken[0], input.getText()));
-                status.setText("Encrypted.");
+                String encrypted = CipherEngine.encrypt(activeToken[0], input.getText());
+                output.setText(encrypted);
+
+                if (autoCopyEncrypted.isSelected()) {
+                    ClipboardContent cc = new ClipboardContent();
+                    cc.putString(encrypted);
+                    Clipboard.getSystemClipboard().setContent(cc);
+                    status.setText("Encrypted and copied.");
+                } else {
+                    status.setText("Encrypted.");
+                }
             } catch (Exception ex) {
                 output.setText("Error: " + ex.getMessage());
                 status.setText("Failed.");
@@ -139,12 +209,50 @@ public class MainApp extends Application {
             if (txt != null && !txt.isBlank()) debounce.playFromStart();
         });
 
+        Button pasteIn = new Button("Paste input");
+        Button pasteInput = new Button("Paste input");
         Button copyOut = new Button("Copy output");
         Button clear = new Button("Clear");
 
+        copyOut.setDisable(true);
+
+        output.textProperty().addListener((obs, oldVal, newVal) ->
+                copyOut.setDisable(newVal == null || newVal.isBlank())
+        );
+
+        pasteIn.setOnAction(e -> {
+            String text = Clipboard.getSystemClipboard().getString();
+
+            if (text == null || text.isBlank()) {
+                status.setText("Clipboard is empty.");
+                return;
+            }
+
+            input.setText(text);
+            status.setText("Pasted input.");
+        });
+
+        pasteInput.setOnAction(e -> {
+            Clipboard clipboard = Clipboard.getSystemClipboard();
+
+            if (clipboard.hasString()) {
+                input.setText(clipboard.getString());
+                status.setText("Pasted input.");
+            } else {
+                status.setText("Clipboard has no text.");
+            }
+        });
+
         copyOut.setOnAction(e -> {
+            String text = output.getText();
+
+            if (text == null || text.isBlank()) {
+                status.setText("No output to copy.");
+                return;
+            }
+
             ClipboardContent cc = new ClipboardContent();
-            cc.putString(output.getText());
+            cc.putString(text);
             Clipboard.getSystemClipboard().setContent(cc);
             status.setText("Copied output.");
         });
@@ -155,7 +263,7 @@ public class MainApp extends Application {
             status.setText("Cleared.");
         });
 
-        HBox buttons = new HBox(10, copyOut, clear);
+        HBox buttons = new HBox(10, pasteIn, copyOut, clear);
         buttons.setPadding(new Insets(10));
 
         VBox io = new VBox(8);
@@ -206,6 +314,50 @@ public class MainApp extends Application {
         d.showAndWait();
     }
 
+    private static final SecureRandom TOKEN_RNG = new SecureRandom();
+
+    private static final int GENERATED_TOKEN_LENGTH = 8;
+
+    private static final String TOKEN_LOWER = "abcdefghijklmnopqrstuvwxyz";
+    private static final String TOKEN_UPPER = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    private static final String TOKEN_DIGITS = "0123456789";
+    private static final String TOKEN_SYMBOLS = "!@#$%^&*()-_=+[]{};:,.?";
+
+    private static String createRandomToken() {
+        if (GENERATED_TOKEN_LENGTH < 4) {
+            throw new IllegalStateException("Generated token length must be at least 4");
+        }
+
+        String allChars = TOKEN_LOWER + TOKEN_UPPER + TOKEN_DIGITS + TOKEN_SYMBOLS;
+
+        char[] token = new char[GENERATED_TOKEN_LENGTH];
+        token[0] = randomChar(TOKEN_LOWER);
+        token[1] = randomChar(TOKEN_UPPER);
+        token[2] = randomChar(TOKEN_DIGITS);
+        token[3] = randomChar(TOKEN_SYMBOLS);
+
+        for (int i = 4; i < token.length; i++) {
+            token[i] = randomChar(allChars);
+        }
+
+        shuffle(token);
+        return new String(token);
+    }
+
+    private static char randomChar(String chars) {
+        return chars.charAt(TOKEN_RNG.nextInt(chars.length()));
+    }
+
+    private static void shuffle(char[] chars) {
+        for (int i = chars.length - 1; i > 0; i--) {
+            int j = TOKEN_RNG.nextInt(i + 1);
+
+            char temp = chars[i];
+            chars[i] = chars[j];
+            chars[j] = temp;
+        }
+    }
+
     private static void openUrl(String url) {
         try {
             Desktop.getDesktop().browse(new URI(url));
@@ -236,4 +388,3 @@ public class MainApp extends Application {
         launch(args);
     }
 }
-// Still looking for malware?
