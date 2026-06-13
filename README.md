@@ -1,20 +1,22 @@
-# Cipher
+# CipherFlutter (previously CipherJavaFX)
 
-Simple JavaFX encrypt/decrypt tool.
+A simple tool to encrypt and decrypt text and files.
 
-## Download (Windows)
-Go to the Releases page and download the latest ZIP, extract it, then run `Cipher.exe`.
+> [!NOTE]
+> I have migrated this project from JavaFX to Flutter to support Android, and iOS (if i have enough dedication).
 
-## Build from source
-Requirements:
-- JDK 21+
-- Maven
+---
 
-Commands:
-- `mvn clean package`
-- Run in IDE or with `mvn javafx:run`
+## Download
 
-## Notes
-The `dist/` and `target/` folders are build outputs and are intentionally not tracked in Git.
+### Windows
+1. Go to the Releases page.
+2. Download the latest ZIP file.
+3. Extract the ZIP folder.
+4. Run CipherFlutter.exe.
 
-###### Android support WILL be added!!!
+### Android
+APK files will be available on the Releases page once finalized. If possible, I will also try to publish the application on the Google Play Store.
+
+### iOS
+Support for iOS? Maybe i will, maybe i won't.
